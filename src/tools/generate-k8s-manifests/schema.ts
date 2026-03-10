@@ -3,28 +3,34 @@
  */
 
 import { z } from 'zod';
-import { environment, type ToolNextAction } from '../shared/schemas';
+import { environment, platform, repositoryPath, type ToolNextAction } from '../shared/schemas';
 import type { PolicyValidationResult } from '@/lib/policy-helpers';
 
 export const generateK8sManifestsSchema = z
   .object({
-    // Module info fields - required for repository mode, optional for ACA mode
+    repositoryPath: repositoryPath
+      .optional()
+      .describe(
+        'Absolute path to the repository root. Required when generating from repository analysis.',
+      ),
     name: z
       .string()
       .optional()
-      .describe('Module name. Required when generating from repository analysis.'),
+      .describe('Module name. Defaults to directory basename of repositoryPath if not provided.'),
     modulePath: z
       .string()
       .optional()
-      .describe(
-        'Absolute path to module root. Required when generating from repository analysis. Paths are automatically normalized to forward slashes on all platforms.',
-      ),
-    dockerfilePath: z.string().optional().describe('Path where the Dockerfile should be generated'),
+      .describe('Absolute path to module root. Required when generating from repository analysis.'),
+    // dockerfilePath removed — not used by k8s manifest generation
+    targetPlatform: platform.describe(
+      'Target platform for the Docker image (e.g., "linux/amd64", "linux/arm64"). Defaults to linux/amd64 for maximum compatibility.',
+    ),
     language: z
-      .enum(['java', 'dotnet', 'javascript', 'typescript', 'python', 'rust', 'go', 'other'])
+      .string()
       .optional()
-      .describe('Primary programming language used in the module'),
+      .describe('Primary programming language (e.g., "java", "python")'),
     languageVersion: z.string().optional(),
+    framework: z.string().optional().describe('Framework used (e.g., "spring", "django")'),
     frameworks: z
       .array(
         z.object({
@@ -40,10 +46,7 @@ export const generateK8sManifestsSchema = z
       })
       .optional()
       .describe('Build system information'),
-    dependencies: z
-      .array(z.string())
-      .optional()
-      .describe('List of module dependencies including database drivers and system libraries'),
+    // dependencies removed — use detectedDependencies instead
     ports: z.array(z.number()).optional(),
     entryPoint: z.string().optional(),
 
@@ -58,7 +61,9 @@ export const generateK8sManifestsSchema = z
     // Common fields
     manifestType: z
       .enum(['kubernetes', 'helm', 'aca', 'kustomize'])
-      .describe('Type of manifest to generate'),
+      .optional()
+      .default('kubernetes')
+      .describe('Type of manifest to generate (defaults to kubernetes)'),
     environment: environment.describe('Target environment (production, development, etc.)'),
     detectedDependencies: z
       .array(z.string())
@@ -75,41 +80,54 @@ export const generateK8sManifestsSchema = z
     trafficLevel: z
       .enum(['high', 'medium', 'low'])
       .optional()
-      .describe('Expected traffic level for dynamic defaults calculation (affects replica counts and scaling).'),
+      .describe(
+        'Expected traffic level for dynamic defaults calculation (affects replica counts and scaling).',
+      ),
     criticalityTier: z
       .enum(['tier-1', 'tier-2', 'tier-3'])
       .optional()
-      .describe('Criticality tier for dynamic defaults calculation (tier-1=mission-critical, tier-3=low-priority).'),
+      .describe(
+        'Criticality tier for dynamic defaults calculation (tier-1=mission-critical, tier-3=low-priority).',
+      ),
   })
+  // NOTE: zod-to-json-schema does not encode superRefine constraints into JSON Schema.
+  // SDK/VS Code JSON Schema validation may accept inputs that Zod rejects at runtime
+  // (e.g. providing both acaManifest and repositoryPath). Runtime validation catches these.
   .superRefine((data, ctx) => {
     const hasAcaManifest = !!data.acaManifest;
-    const hasModuleInfo = !!data.name && !!data.modulePath;
+    const hasRepoPath = !!data.repositoryPath;
 
     // Require exactly one mode: ACA conversion OR repository analysis
-    if (!hasAcaManifest && !hasModuleInfo) {
+    if (!hasAcaManifest && !hasRepoPath) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'Either provide acaManifest (for ACA conversion) or name+modulePath (for repository analysis)',
+          'Either provide acaManifest (for ACA conversion) or repositoryPath+modulePath (for repository analysis)',
         path: ['acaManifest'],
       });
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'Either provide acaManifest (for ACA conversion) or name+modulePath (for repository analysis)',
-        path: ['name'],
+          'Either provide acaManifest (for ACA conversion) or repositoryPath+modulePath (for repository analysis)',
+        path: ['repositoryPath'],
+      });
+    } else if (hasAcaManifest && hasRepoPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Provide either acaManifest (for ACA conversion) or repositoryPath+modulePath (for repository analysis), but not both',
+        path: ['acaManifest'],
+      });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Provide either acaManifest (for ACA conversion) or repositoryPath+modulePath (for repository analysis), but not both',
+        path: ['repositoryPath'],
       });
     }
 
-    // Repository mode requires both name and modulePath
-    if (!hasAcaManifest) {
-      if (!data.name) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'name is required when not using acaManifest',
-          path: ['name'],
-        });
-      }
+    // Repository mode requires repositoryPath and modulePath
+    if (!hasAcaManifest && hasRepoPath) {
       if (!data.modulePath) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -127,7 +145,7 @@ export interface ManifestRequirement {
   category: string;
   recommendation: string;
   example?: string;
-  severity?: 'high' | 'medium' | 'low' | 'required';
+  severity?: 'high' | 'medium' | 'low';
   tags?: string[];
   matchScore: number;
   /** Indicates if this recommendation was injected by policy template */
@@ -135,19 +153,10 @@ export interface ManifestRequirement {
 }
 
 export interface RepositoryInfo {
+  repositoryPath?: string | undefined;
   name: string | undefined;
   modulePath: string | undefined;
-  dockerfilePath?: string | undefined;
-  language?:
-    | 'java'
-    | 'dotnet'
-    | 'javascript'
-    | 'typescript'
-    | 'python'
-    | 'rust'
-    | 'go'
-    | 'other'
-    | undefined;
+  language?: string | undefined;
   languageVersion?: string | undefined;
   frameworks?:
     | Array<{
@@ -161,9 +170,9 @@ export interface RepositoryInfo {
         configFile?: string;
       }
     | undefined;
-  dependencies?: string[] | undefined;
   ports?: number[] | undefined;
   entryPoint?: string | undefined;
+  targetPlatform?: string | undefined;
 }
 
 export interface ManifestPlan {

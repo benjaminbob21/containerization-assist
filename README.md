@@ -12,8 +12,8 @@ An AI-powered containerization assistant that helps you build, scan, and deploy 
 ## Install
 
 
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Containerization_Assist_MCP-0098FF?style=flat-square&logo=visualstudiocode&logoColor=ffffff)](https://insiders.vscode.dev/redirect/mcp/install?name=containerization-assist&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22containerization-assist-mcp%22%2C%22start%22%5D%7D)
-[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Containerization_Assist_MCP-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=ffffff)](https://insiders.vscode.dev/redirect/mcp/install?name=containerization-assist&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22containerization-assist-mcp%22%2C%22start%22%5D%7D&quality=insiders)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Containerization_Assist_MCP-0098FF?style=flat-square&logo=visualstudiocode&logoColor=ffffff)](https://insiders.vscode.dev/redirect/mcp/install?name=ca&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22containerization-assist-mcp%22%2C%22start%22%5D%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Containerization_Assist_MCP-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=ffffff)](https://insiders.vscode.dev/redirect/mcp/install?name=ca&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22containerization-assist-mcp%22%2C%22start%22%5D%7D&quality=insiders)
 
 ## Features
 
@@ -65,7 +65,7 @@ Add the following to your VS Code settings or create `.vscode/mcp.json` in your 
 ```json
 {
   "servers": {
-    "containerization-assist": {
+    "ca": {
       "command": "npx",
       "args": ["-y", "containerization-assist-mcp", "start"],
       "env": {
@@ -131,9 +131,8 @@ This MCP server guides you through a complete containerization workflow for a si
 4. **Scan Image** → Identify security vulnerabilities and get remediation guidance
 5. **Tag Image** → Apply appropriate version tags to your image
 6. **Generate K8s Manifests** → Create deployment configurations for Kubernetes
-7. **Prepare Cluster** → Set up namespace and prerequisites (if needed)
-8. **Deploy** → Deploy your application to Kubernetes
-9. **Verify** → Confirm deployment health and readiness
+7. **Prepare Cluster** → Set up namespace and prerequisites, then deploy with `kubectl apply`
+8. **Verify** → Confirm deployment health and readiness
 
 ### Prerequisites
 
@@ -215,7 +214,7 @@ The server detects and supports monorepo structures with multiple independently 
 
 ## Available Tools
 
-The server provides 13 MCP tools organized by functionality:
+The server provides 11 MCP tools organized by functionality:
 
 ### Analysis & Planning
 | Tool | Description |
@@ -247,6 +246,15 @@ The server provides 13 MCP tools organized by functionality:
 | Tool | Description |
 |------|-------------|
 | `ops` | Operational utilities for ping and server status |
+
+### MCP Prompts
+
+Interactive workflow prompts available as `/` slash commands in VS Code Copilot Chat:
+
+| Prompt | Description | Required Inputs |
+|--------|-------------|-----------------|
+| `kind-loop` | Local dev loop: analyze → build → scan → deploy to Kind | None (namespace, imageName optional) |
+| `aks-loop` | Remote dev loop: analyze → build → push → deploy to AKS | `registry`, `resourceGroup`, `clusterName` |
 
 ## Supported Technologies
 
@@ -359,7 +367,7 @@ cp node_modules/containerization-assist-mcp/policies.user.examples/allow-all-reg
 # 3. Configure environment variable in .vscode/mcp.json
 {
   "servers": {
-    "containerization-assist": {
+    "ca": {
       "env": {
         "CUSTOM_POLICY_PATH": "${env:HOME}/.config/containerization-assist/policies"
       }
