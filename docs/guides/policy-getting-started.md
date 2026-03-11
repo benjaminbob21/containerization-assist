@@ -1,30 +1,49 @@
 # Policy Customization - Getting Started
 
-This guide helps you customize containerization policies using the priority-ordered policy system.
+Customize containerization policies using the priority-ordered policy system.
 
-## Quick Start (60 seconds)
+## Quick Start
 
-### For Source Installation Users (10 seconds)
+1. Create a directory for your policies and add a `.rego` file:
 
 ```bash
-# Copy example policy to policies.user/
-mkdir -p policies.user
-cp policies.user.examples/allow-all-registries.rego policies.user/
-
-# Restart your MCP client
+mkdir -p ~/.config/containerization-assist/policies
 ```
 
-### For NPM Installation Users (30 seconds)
+2. Save a policy file to that directory, e.g. `~/.config/containerization-assist/policies/require-mcr-images.rego`:
 
-```bash
-# 1. Create custom policy directory
-mkdir -p ~/.config/containerization-assist/policies
+```rego
+# Rego policy: block Dockerfiles that use base images outside mcr.microsoft.com
+package containerization.require_mcr
 
-# 2. Copy example policy
-cp node_modules/containerization-assist-mcp/policies.user.examples/allow-all-registries.rego \
-   ~/.config/containerization-assist/policies/
+# Extract all FROM lines from the Dockerfile
+from_lines := [line |
+  line := split(input.content, "\n")[_]
+  startswith(trim_space(line), "FROM ")
+]
 
-# 3. Set environment variable in .vscode/mcp.json
+# Flag each FROM line that does not reference mcr.microsoft.com
+violations contains result if {
+  some line in from_lines
+  not contains(line, "mcr.microsoft.com/")
+
+  result := {
+    "rule": "require-mcr-images",
+    "category": "security",
+    "priority": 95,
+    "severity": "block",
+    "message": sprintf("Base image must come from mcr.microsoft.com: %s", [trim_space(line)]),
+  }
+}
+
+default allow := false
+allow if count(violations) == 0
+result := { "allow": allow, "violations": violations }
+```
+
+3. Point the server to your policies directory in `.vscode/mcp.json`:
+
+```json
 {
   "servers": {
     "containerization-assist": {
@@ -34,9 +53,9 @@ cp node_modules/containerization-assist-mcp/policies.user.examples/allow-all-reg
     }
   }
 }
-
-# 4. Restart VS Code
 ```
+
+4. Restart your MCP client to pick up the new policy.
 
 ## Policy Priority
 
@@ -44,7 +63,7 @@ Policies are discovered and merged from three locations in priority order:
 
 1. **Built-in policies/** (lowest priority) - Base security and quality rules
 2. **policies.user/** (middle priority) - Repository-specific customizations
-3. **CUSTOM_POLICY_PATH** (highest priority) - Organization-wide policies
+3. **`CUSTOM_POLICY_PATH` environment variable** (highest priority) - Organization-wide policies
 
 Later policies override earlier policies by package namespace.
 
@@ -153,6 +172,6 @@ rm -rf policies.user/
 
 ## Support
 
-- [Policy Customization Examples](../../policies.user.examples/README.md)
+- [Policy Customization Examples](https://github.com/Azure/containerization-assist/tree/main/policies.user.examples)
 - [OPA Rego Documentation](https://www.openpolicyagent.org/docs/latest/)
 - [GitHub Issues](https://github.com/Azure/containerization-assist/issues)

@@ -6,8 +6,11 @@
 [![Node](https://img.shields.io/github/package-json/engines-node/Azure/containerization-assist?color=brightgreen&label=node)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/github/package-json/dependency-version/Azure/containerization-assist/dev/typescript?color=blue&label=TypeScript)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/github/license/Azure/containerization-assist?color=green)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://azure.github.io/containerization-assist/)
 
 An AI-powered containerization assistant that helps you build, scan, and deploy Docker containers through VS Code and other MCP-compatible tools.
+
+> **[Full documentation →](https://azure.github.io/containerization-assist/)**
 
 ## Install
 
@@ -27,14 +30,14 @@ An AI-powered containerization assistant that helps you build, scan, and deploy 
 - 📊 **Progress Tracking**: Real-time progress updates via MCP notifications
 - 🔒 **Security Scanning**: Built-in vulnerability scanning with AI-powered suggestions
 - ✨ **Smart Analysis**: Context-aware recommendations
-- **Policy-Driven System (v3.0)** 🆕
+- **Policy-Driven System (v3.0)**
   - Pre-generation configuration
   - Knowledge filtering and weighting
   - Template injection
   - Semantic validation
   - Cross-tool consistency
 
-### Policy System (v3.0) 🆕
+### Policy System (v3.0)
 
 Full control over containerization through Rego policies:
 
@@ -108,7 +111,7 @@ if (buildContext.ok) {
 const scan = await scanImage({ imageId: 'myapp:v1' });
 ```
 
-See [CLAUDE.md](./CLAUDE.md#sdk-usage-non-mcp) for full SDK documentation.
+See the [SDK integration examples](docs/examples/README.md) for full SDK documentation.
 
 ### Windows Users
 
