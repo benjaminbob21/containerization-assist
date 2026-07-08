@@ -47,21 +47,7 @@ first, then come back.
 **Container port** — if `ports[0]` is set, use it. Otherwise pick from the
 language default:
 
-| Language / framework | Default port |
-|---|---|
-| Spring Boot | 8080 |
-| Java (other) | 8080 |
-| ASP.NET Core | 8080 |
-| Node / Express / Next / Fastify | 3000 |
-| Python / Flask | 5000 |
-| Python / Django | 8000 |
-| Python / FastAPI / Uvicorn | 8000 |
-| Go (gin / echo / fiber / chi) | 8080 |
-| Rust (axum / actix / rocket) | 8080 |
-| PHP-FPM | 9000 |
-| PHP / Apache | 80 |
-| Ruby on Rails | 3000 |
-| Unknown | 8080 |
+{{knowledge:k8s-default-ports}}
 
 **Replica count** — start from this table, then override if both
 `trafficLevel` and `criticalityTier` are given (lower row wins):

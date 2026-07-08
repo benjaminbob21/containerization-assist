@@ -1,0 +1,37 @@
+{
+  "$schema": "./simple-table.schema.json",
+  "tables": {
+    "dockerfile-rules-security": {
+      "columns": ["ruleId", "Pattern", "Severity", "Message"],
+      "rows": [
+        ["`block-root-user`", "Any line matches `^USER\\s+(root\\|0)\\s*$` (case-insensitive multiline)", "**error**", "Running as root is forbidden. Replace with a non-root user."],
+        ["`no-root-user`", "No `USER` line at all, OR final `USER` line argument is `root`/`0`", "**error**", "Container must declare a non-root `USER` instruction."],
+        ["`block-secrets-in-env`", "Any `ENV` or `ARG` line matches `(?i)(PASSWORD\\|PASSWD\\|SECRET\\|TOKEN\\|API[_-]?KEY\\|PRIVATE[_-]?KEY\\|ACCESS[_-]?KEY\\|CREDENTIAL\\|DATABASE_URL\\|CONNECTION_STRING\\|REDIS_URL\\|MONGODB?_URI\\|_DSN)\\b.*=\\s*\\S+` with a non-empty, non-placeholder value", "**error**", "Hardcoded secret in `ENV`/`ARG`. Inject via runtime (Kubernetes Secret)."],
+        ["`no-secrets`", "Same as above but covers `RUN export FOO=…` and `RUN echo \"FOO=…\"` shapes", "**error**", "Hardcoded secret in `RUN`."],
+        ["`avoid-sudo`", "Any line matches `(?i)\\bsudo\\b`", "warning", "Drop `sudo`; run the entire stage as the required user instead."],
+        ["`avoid-apt-upgrade`", "Any line matches `(?i)apt-get\\s+(upgrade\\|dist-upgrade)`", "warning", "Avoid `apt-get upgrade`; pin package versions."]
+      ]
+    },
+    "dockerfile-rules-performance": {
+      "columns": ["ruleId", "Pattern", "Severity", "Message"],
+      "rows": [
+        ["`optimize-package-install`", "`RUN` line with `apt-get install` but NO `rm -rf /var/lib/apt/lists/*` in the same `RUN`", "warning", "Combine update + install + cleanup in one `RUN`."],
+        ["`apk-no-cache`", "`apk add` without `--no-cache`", "info", "Add `--no-cache` to `apk add`."],
+        ["`recommend-npm-ci`", "`npm install` without `-g`", "info", "Use `npm ci` for reproducible builds."],
+        ["`excessive-run-commands`", "Count of `RUN` lines ≥ 6", "info", "Combine `RUN` instructions with `&&` to reduce layers."],
+        ["`dependency-order`", "`COPY . .` (or `COPY . /<dir>`) appears **before** any `COPY package*.json` / `COPY pom.xml` / `COPY go.mod` / `COPY requirements*.txt` / `COPY Cargo.toml`", "info", "Copy dependency manifests before source for better layer caching."],
+        ["`recommend-multistage`", "Single `FROM` AND any of `mvn`, `gradle`, `npm run build`, `go build`, `cargo build`, `dotnet publish` appears in a `RUN` line", "info", "Use multi-stage build to drop build tools from the final image."]
+      ]
+    },
+    "dockerfile-rules-bestpractice": {
+      "columns": ["ruleId", "Pattern", "Severity", "Message"],
+      "rows": [
+        ["`specific-base-image`", "Any `FROM` whose tag is `latest` or missing (no `:`)", "warning", "Pin a specific major version tag, never `:latest`."],
+        ["`require-healthcheck`", "No line starts with `HEALTHCHECK `", "info", "Add `HEALTHCHECK` (or note why if image is distroless / shell-less)."],
+        ["`require-workdir`", "No `WORKDIR` line, OR any `RUN cd /` pattern", "info", "Use `WORKDIR` instead of `cd`."],
+        ["`recommend-expose`", "Application code references a port (`PORT=`, `LISTEN`, `:8080`, `:3000`, `:5000`) but no `EXPOSE` line", "info", "Add `EXPOSE <port>` to document the listener."],
+        ["`missing-attribution-labels`", "No `LABEL com.azure.containerizationassist.createdby`", "info", "Add the attribution `createdby` label (and `version` if a version is available) for traceability."]
+      ]
+    }
+  }
+}

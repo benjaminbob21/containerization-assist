@@ -1,0 +1,101 @@
+{
+  "$schema": "./base-image-catalog.schema.json",
+  "mcr": [
+    {
+      "stack": "java",
+      "displayName": "Java",
+      "registryRepo": "mcr.microsoft.com/openjdk/jdk",
+      "columns": ["Build tag", "Runtime tag"],
+      "rows": [
+        { "version": "8", "tags": ["8-azurelinux", "8-distroless"] },
+        { "version": "11", "tags": ["11-azurelinux", "11-distroless"] },
+        { "version": "17", "tags": ["17-azurelinux", "17-distroless"] },
+        { "version": "21", "tags": ["21-azurelinux", "21-distroless"] },
+        { "version": "25", "tags": ["25-azurelinux", "25-distroless"] }
+      ],
+      "notes": "These are the only Java major versions on MCR (verified against\n`https://mcr.microsoft.com/v2/openjdk/jdk/tags/list`). The published tag\nformat is a **single digit major** — `8-azurelinux`, never `1.8-azurelinux`\nor `8u292-jdk-slim` (those do not exist and fail with `image not found`).\nMCR does **not** publish a separate `openjdk/jre` repository — for the\nruntime stage of a JRE-only image, use the `-distroless` variant of the\nsame major (`8-distroless`, `17-distroless`, …) which ships only the JRE."
+    },
+    {
+      "stack": "dotnet",
+      "displayName": ".NET",
+      "registryRepo": "mcr.microsoft.com/dotnet/{sdk,aspnet,runtime}",
+      "columns": ["SDK", "ASP.NET runtime", "Generic runtime"],
+      "rows": [
+        { "version": "8.0", "tags": ["sdk:8.0-azurelinux3.0", "aspnet:8.0-azurelinux3.0", "runtime:8.0-azurelinux3.0"] },
+        { "version": "9.0", "tags": ["sdk:9.0-azurelinux3.0", "aspnet:9.0-azurelinux3.0", "runtime:9.0-azurelinux3.0"] }
+      ]
+    },
+    {
+      "stack": "node",
+      "displayName": "Node.js",
+      "registryRepo": "mcr.microsoft.com/azurelinux/{base,distroless}/nodejs",
+      "columns": ["Build tag", "Runtime tag"],
+      "rows": [
+        { "version": "18", "tags": ["base/nodejs:18", "distroless/nodejs:18"] },
+        { "version": "20", "tags": ["base/nodejs:20", "distroless/nodejs:20"] },
+        { "version": "22", "tags": ["base/nodejs:22", "distroless/nodejs:22"] }
+      ]
+    },
+    {
+      "stack": "python",
+      "displayName": "Python",
+      "registryRepo": "mcr.microsoft.com/azurelinux/{base,distroless}/python",
+      "columns": ["Build tag", "Runtime tag"],
+      "rows": [
+        { "version": "3.11", "tags": ["base/python:3.11", "distroless/python:3.11"] },
+        { "version": "3.12", "tags": ["base/python:3.12", "distroless/python:3.12"] }
+      ]
+    }
+  ],
+  "defaults": [
+    { "key": "java", "version": "21" },
+    { "key": "dotnet", "version": "8.0" },
+    { "key": "node", "version": "20" },
+    { "key": "python", "version": "3.12" }
+  ],
+  "fallbacks": {
+    "columns": ["Stack / Reason", "Build stage", "Runtime stage"],
+    "rows": [
+      {
+        "stackReason": "Maven builder (MCR ships no Maven-with-JDK image)",
+        "buildStage": "`maven:3.9-eclipse-temurin-<LV>` (where `<LV>` ∈ {8, 11, 17, 21})",
+        "runtimeStage": "use the matching MCR `openjdk/jdk:<LV>-distroless` for runtime"
+      },
+      {
+        "stackReason": "Gradle builder (MCR ships no Gradle image)",
+        "buildStage": "`gradle:<ver>-jdk<LV>`",
+        "runtimeStage": "use the matching MCR `openjdk/jdk:<LV>-distroless` for runtime"
+      },
+      {
+        "stackReason": "Java EE / Jakarta EE app server (EJB, JSF, full profile — MCR ships no app server)",
+        "buildStage": "`maven:3.9-eclipse-temurin-<LV>` or MCR `openjdk/jdk:<LV>-azurelinux`",
+        "runtimeStage": "`jboss/wildfly:<ver>` (WildFly), `payara/server-full:<ver>` (Payara), `tomee:<ver>` (TomEE), or `tomcat:<ver>-jdk<LV>` (servlet-only WAR)"
+      },
+      {
+        "stackReason": "Servlet/JSP WAR with no EJB",
+        "buildStage": "MCR `openjdk/jdk:<LV>-azurelinux`",
+        "runtimeStage": "`tomcat:<ver>-jdk<LV>`"
+      },
+      {
+        "stackReason": "Go (no MCR base)",
+        "buildStage": "`golang:<LV>-alpine`",
+        "runtimeStage": "`gcr.io/distroless/static-debian12:nonroot` (CGO off) or `gcr.io/distroless/base-debian12:nonroot` (CGO on)"
+      },
+      {
+        "stackReason": "Rust (no MCR base)",
+        "buildStage": "`rust:<LV>-slim`",
+        "runtimeStage": "`gcr.io/distroless/cc-debian12:nonroot`"
+      },
+      {
+        "stackReason": "PHP (no MCR base)",
+        "buildStage": "`composer:2`",
+        "runtimeStage": "`php:<LV>-fpm-alpine` or `php:<LV>-apache`"
+      },
+      {
+        "stackReason": "Ruby (no MCR base)",
+        "buildStage": "`ruby:<LV>-slim`",
+        "runtimeStage": "`ruby:<LV>-slim`"
+      }
+    ]
+  }
+}

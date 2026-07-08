@@ -36,20 +36,7 @@ Otherwise, run the full procedure.
 
 Match file basenames against this set (case-sensitive):
 
-| Ecosystem | Files |
-|---|---|
-| Node | `package.json` |
-| Java – Maven | `pom.xml` |
-| Java – Gradle | `build.gradle`, `build.gradle.kts` |
-| Python | `requirements.txt`, `pyproject.toml` |
-| Rust | `Cargo.toml` |
-| .NET | `*.csproj`, `*.fsproj`, `*.vbproj` |
-| Go | `go.mod` |
-| PHP | `composer.json` |
-| Ruby | `Gemfile` |
-| Container | `Dockerfile`, `docker-compose.yml`, `docker-compose.yaml` |
-| Spring | `application.properties`, `application.yml`, `application.yaml` |
-| Env templates | `.env.example`, `.env.sample`, `.env.template` |
+{{knowledge:ecosystem-config-files}}
 
 Read each match, **truncate at 1000 characters**, and remember the (path,
 content) pair.

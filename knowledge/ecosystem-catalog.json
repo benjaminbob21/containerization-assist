@@ -1,0 +1,22 @@
+{
+  "$schema": "./simple-table.schema.json",
+  "tables": {
+    "ecosystem-config-files": {
+      "columns": ["Ecosystem", "Files"],
+      "rows": [
+        ["Node", "`package.json`"],
+        ["Java – Maven", "`pom.xml`"],
+        ["Java – Gradle", "`build.gradle`, `build.gradle.kts`"],
+        ["Python", "`requirements.txt`, `pyproject.toml`"],
+        ["Rust", "`Cargo.toml`"],
+        [".NET", "`*.csproj`, `*.fsproj`, `*.vbproj`"],
+        ["Go", "`go.mod`"],
+        ["PHP", "`composer.json`"],
+        ["Ruby", "`Gemfile`"],
+        ["Container", "`Dockerfile`, `docker-compose.yml`, `docker-compose.yaml`"],
+        ["Spring", "`application.properties`, `application.yml`, `application.yaml`"],
+        ["Env templates", "`.env.example`, `.env.sample`, `.env.template`"]
+      ]
+    }
+  }
+}

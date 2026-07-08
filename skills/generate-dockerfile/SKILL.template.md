@@ -72,48 +72,7 @@ first; only if no row matches, drop to G2.3.
 Use only the tags listed here. If your `<LV>` is not in the list, see
 G2.2 (modernize) or G2.3 (documented fallback) — do NOT guess a tag.
 
-**Java — `mcr.microsoft.com/openjdk/jdk`**
-
-| `<LV>` | Build tag | Runtime tag |
-|---|---|---|
-| 8 | `8-azurelinux` | `8-distroless` |
-| 11 | `11-azurelinux` | `11-distroless` |
-| 17 | `17-azurelinux` | `17-distroless` |
-| 21 | `21-azurelinux` | `21-distroless` |
-| 25 | `25-azurelinux` | `25-distroless` |
-
-These are the only Java major versions on MCR (verified against
-`https://mcr.microsoft.com/v2/openjdk/jdk/tags/list`). The published tag
-format is a **single digit major** — `8-azurelinux`, never `1.8-azurelinux`
-or `8u292-jdk-slim` (those do not exist and fail with `image not found`).
-MCR does **not** publish a separate `openjdk/jre` repository — for the
-runtime stage of a JRE-only image, use the `-distroless` variant of the
-same major (`8-distroless`, `17-distroless`, …) which ships only the JRE.
-
-**.NET — `mcr.microsoft.com/dotnet/{sdk,aspnet,runtime}`**
-
-| `<LV>` | SDK | ASP.NET runtime | Generic runtime |
-|---|---|---|---|
-| 8.0 | `sdk:8.0-azurelinux3.0` | `aspnet:8.0-azurelinux3.0` | `runtime:8.0-azurelinux3.0` |
-| 9.0 | `sdk:9.0-azurelinux3.0` | `aspnet:9.0-azurelinux3.0` | `runtime:9.0-azurelinux3.0` |
-
-**Node.js — `mcr.microsoft.com/azurelinux/{base,distroless}/nodejs`**
-
-| `<LV>` | Build tag | Runtime tag |
-|---|---|---|
-| 18 | `base/nodejs:18` | `distroless/nodejs:18` |
-| 20 | `base/nodejs:20` | `distroless/nodejs:20` |
-| 22 | `base/nodejs:22` | `distroless/nodejs:22` |
-
-**Python — `mcr.microsoft.com/azurelinux/{base,distroless}/python`**
-
-| `<LV>` | Build tag | Runtime tag |
-|---|---|---|
-| 3.11 | `base/python:3.11` | `distroless/python:3.11` |
-| 3.12 | `base/python:3.12` | `distroless/python:3.12` |
-
-Defaults if `languageVersion` is missing: `java=21`, `dotnet=8.0`,
-`node=20`, `python=3.12`.
+{{knowledge:mcr-catalog}}
 
 #### G2.2 — Modernize before falling back
 
@@ -142,16 +101,7 @@ violation: it defeats the MCR-runtime goal and ships the full build toolchain
 plus source in the running image — even though a lone `maven`/`gradle` `FROM`
 looks "allowed" here.
 
-| Stack / Reason | Build stage | Runtime stage |
-|---|---|---|
-| Maven builder (MCR ships no Maven-with-JDK image) | `maven:3.9-eclipse-temurin-<LV>` (where `<LV>` ∈ {8, 11, 17, 21}) | use the matching MCR `openjdk/jdk:<LV>-distroless` for runtime |
-| Gradle builder (MCR ships no Gradle image) | `gradle:<ver>-jdk<LV>` | use the matching MCR `openjdk/jdk:<LV>-distroless` for runtime |
-| Java EE / Jakarta EE app server (EJB, JSF, full profile — MCR ships no app server) | `maven:3.9-eclipse-temurin-<LV>` or MCR `openjdk/jdk:<LV>-azurelinux` | `jboss/wildfly:<ver>` (WildFly), `payara/server-full:<ver>` (Payara), `tomee:<ver>` (TomEE), or `tomcat:<ver>-jdk<LV>` (servlet-only WAR) |
-| Servlet/JSP WAR with no EJB | MCR `openjdk/jdk:<LV>-azurelinux` | `tomcat:<ver>-jdk<LV>` |
-| Go (no MCR base) | `golang:<LV>-alpine` | `gcr.io/distroless/static-debian12:nonroot` (CGO off) or `gcr.io/distroless/base-debian12:nonroot` (CGO on) |
-| Rust (no MCR base) | `rust:<LV>-slim` | `gcr.io/distroless/cc-debian12:nonroot` |
-| PHP (no MCR base) | `composer:2` | `php:<LV>-fpm-alpine` or `php:<LV>-apache` |
-| Ruby (no MCR base) | `ruby:<LV>-slim` | `ruby:<LV>-slim` |
+{{knowledge:fallback-images}}
 
 **Bare JDK/JRE images (`eclipse-temurin`, `openjdk`, `adoptopenjdk`,
 `amazoncorretto`, `ibmjava`) are NOT on this list.** For Java versions
