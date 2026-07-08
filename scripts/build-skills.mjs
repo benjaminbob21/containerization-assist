@@ -5,10 +5,10 @@ import { dirname, resolve, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const knowledgeDir = resolve(repoRoot, "knowledge");
+const catalogsDir = resolve(repoRoot, "knowledge/catalogs");
 const skillsRoot = resolve(repoRoot, "skills");
 
-const baseImageCatalog = JSON.parse(readFileSync(join(knowledgeDir, "base-image-catalog.json"), "utf8"));
+const baseImageCatalog = JSON.parse(readFileSync(join(catalogsDir, "base-image-catalog.json"), "utf8"));
 
 const simpleTableCatalogs = [
   "dockerfile-rules-catalog.json",
@@ -18,7 +18,7 @@ const simpleTableCatalogs = [
 
 const simpleTables = {};
 for (const name of simpleTableCatalogs) {
-  const catalog = JSON.parse(readFileSync(join(knowledgeDir, name), "utf8"));
+  const catalog = JSON.parse(readFileSync(join(catalogsDir, name), "utf8"));
   for (const [id, table] of Object.entries(catalog.tables)) {
     if (simpleTables[id]) throw new Error(`Duplicate table id "${id}" across catalogs`);
     simpleTables[id] = table;
