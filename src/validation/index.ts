@@ -8,6 +8,12 @@ export {
   createKubernetesValidator,
   type KubernetesValidatorInstance,
 } from './kubernetes-validator';
+export {
+  AKS_SAFEGUARDS,
+  AUTHORING_SAFEGUARDS,
+  type SafeguardCoverage,
+  type SafeguardEnforcementPoint,
+} from './aks-safeguards-map';
 export type {
   ValidationResult,
   ValidationReport,

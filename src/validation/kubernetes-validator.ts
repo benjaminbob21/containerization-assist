@@ -5,7 +5,7 @@
  * Trade-off: Runtime YAML parsing cost over build-time validation for flexibility
  */
 
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import { extractErrorMessage } from '@/lib/errors';
 import {
   KubernetesValidationRule,
@@ -24,6 +24,12 @@ interface PodSpec {
   volumes?: Volume[];
   securityContext?: SecurityContext;
   hostNetwork?: boolean;
+  hostPID?: boolean;
+  hostIPC?: boolean;
+  affinity?: {
+    podAntiAffinity?: unknown;
+  };
+  topologySpreadConstraints?: unknown[];
 }
 
 interface Container {
@@ -62,7 +68,11 @@ interface Probe {
 }
 
 interface WorkloadSpec {
+  replicas?: number;
   template?: {
+    metadata?: {
+      labels?: Record<string, string>;
+    };
     spec?: PodSpec;
   };
   jobTemplate?: {
@@ -111,6 +121,47 @@ const getPodSpec = (manifest: KubernetesManifest): PodSpec | undefined => {
 const getContainers = (manifest: KubernetesManifest): Container[] => {
   const podSpec = getPodSpec(manifest);
   return [...(podSpec?.containers || []), ...(podSpec?.initContainers || [])];
+};
+
+/**
+ * Get workload (non-init) containers only.
+ * AKS probe enforcement (k8sazurev2containerenforceprobes) applies to
+ * spec.containers and excludes initContainers.
+ */
+const getMainContainers = (manifest: KubernetesManifest): Container[] => {
+  const podSpec = getPodSpec(manifest);
+  return podSpec?.containers || [];
+};
+
+/**
+ * Get the desired replica count for a workload, defaulting to 1.
+ * Used by the anti-affinity safeguard (k8sazurev1antiaffinityrules), which
+ * only fires when replicas > 1.
+ */
+const getReplicas = (manifest: KubernetesManifest): number => {
+  const replicas = (manifest.spec as { replicas?: number })?.replicas;
+  return typeof replicas === 'number' ? replicas : 1;
+};
+
+/**
+ * Detect an image reference that resolves to the mutable ':latest' tag,
+ * either explicitly (`repo:latest`) or implicitly (no tag / no digest).
+ * Mirrors k8sazurev2containernolatestimage.
+ */
+const usesLatestImage = (image: string | undefined): boolean => {
+  if (!image) return false;
+  // A digest-pinned image (repo@sha256:...) is always explicit.
+  if (image.includes('@sha256:')) return false;
+  // Split off any registry-with-port (host:5000/repo) before checking the tag.
+  const lastSlash = image.lastIndexOf('/');
+  const nameAndTag = lastSlash >= 0 ? image.slice(lastSlash + 1) : image;
+  const colon = nameAndTag.lastIndexOf(':');
+  if (colon < 0) {
+    // No tag at all -> defaults to :latest.
+    return true;
+  }
+  const tag = nameAndTag.slice(colon + 1);
+  return tag === 'latest';
 };
 
 /**
@@ -331,6 +382,151 @@ const KUBERNETES_RULES: KubernetesValidationRule[] = [
     fix: 'Add strategy.type (RollingUpdate or Recreate)',
     category: ValidationCategory.BEST_PRACTICE,
   },
+
+  // ===========================================================================
+  // AKS DEPLOYMENT SAFEGUARDS
+  //
+  // These rules mirror the AKS Gatekeeper constraint templates that AKS
+  // Automatic enforces by default (Enforce mode). Catching them here means a
+  // generated manifest passes AKS Automatic admission on the first deploy.
+  // See docs/aks-deployment-safeguards.md and https://aka.ms/aks/deployment-safeguards
+  // ===========================================================================
+
+  {
+    // Upstream: k8sazurev1containerrequests
+    id: 'aks-safeguard-resource-requests',
+    name: 'AKS safeguard: container resource requests',
+    description: 'Every container must define CPU and memory resource requests',
+    check: (manifest: KubernetesManifest) => {
+      if (!isWorkload(manifest)) return true;
+
+      const containers = getContainers(manifest);
+      if (containers.length === 0) return true;
+      return containers.every((container) => {
+        const requests = container.resources?.requests;
+        return !!(requests?.cpu && requests?.memory);
+      });
+    },
+    message: 'Define CPU and memory requests on every container (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Add resources.requests.cpu and resources.requests.memory to each container',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev2containernolatestimage
+    id: 'aks-safeguard-no-latest-image',
+    name: 'AKS safeguard: no ":latest" image tag',
+    description: 'Container images must use an explicit version tag, not :latest or untagged',
+    check: (manifest: KubernetesManifest) => {
+      if (!isWorkload(manifest)) return true;
+
+      const containers = getContainers(manifest);
+      return containers.every((container) => !usesLatestImage(container.image));
+    },
+    message: 'Use an explicit, versioned image tag instead of :latest (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Pin each container image to an explicit version tag, e.g. myapp:1.2.3',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev1antiaffinityrules
+    id: 'aks-safeguard-anti-affinity',
+    name: 'AKS safeguard: anti-affinity or topology spread',
+    description:
+      'Multi-replica workloads must set podAntiAffinity or topologySpreadConstraints to survive node failures',
+    check: (manifest: KubernetesManifest) => {
+      if (!isWorkload(manifest)) return true;
+      if (getReplicas(manifest) <= 1) return true;
+
+      const podSpec = getPodSpec(manifest);
+      const hasAntiAffinity = !!podSpec?.affinity?.podAntiAffinity;
+      const hasTopologySpread =
+        Array.isArray(podSpec?.topologySpreadConstraints) &&
+        podSpec.topologySpreadConstraints.length > 0;
+      return hasAntiAffinity || hasTopologySpread;
+    },
+    message:
+      'Set podAntiAffinity or topologySpreadConstraints on workloads with more than one replica (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Add spec.template.spec.affinity.podAntiAffinity or spec.template.spec.topologySpreadConstraints',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev2containerenforceprobes
+    id: 'aks-safeguard-enforce-probes',
+    name: 'AKS safeguard: readiness and liveness probes',
+    description: 'Every workload container should define readiness and liveness probes',
+    check: (manifest: KubernetesManifest) => {
+      if (!isWorkload(manifest)) return true;
+
+      const containers = getMainContainers(manifest);
+      if (containers.length === 0) return true;
+      return containers.every(
+        (container) => !!container.readinessProbe && !!container.livenessProbe,
+      );
+    },
+    message: 'Add readinessProbe and livenessProbe to every container (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.WARNING,
+    fix: 'Define readinessProbe and livenessProbe (httpGet, tcpSocket, or exec) on each container',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev1restrictedlabels
+    id: 'aks-safeguard-restricted-labels',
+    name: 'AKS safeguard: no AKS-reserved labels',
+    description: 'Labels under kubernetes.azure.com/ are reserved for AKS and must not be set',
+    check: (manifest: KubernetesManifest) => {
+      const reserved = (labels?: Record<string, string>): boolean =>
+        !!labels && Object.keys(labels).some((key) => key.startsWith('kubernetes.azure.com/'));
+
+      const podTemplateLabels = (manifest.spec as WorkloadSpec)?.template?.metadata?.labels;
+      return !reserved(manifest.metadata?.labels) && !reserved(podTemplateLabels);
+    },
+    message: 'Remove labels under kubernetes.azure.com/ — they are reserved for AKS use only',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Delete any kubernetes.azure.com/* labels from metadata.labels and pod template labels',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev3blockhostnamespace (baseline Pod Security Standard)
+    id: 'aks-safeguard-host-namespaces',
+    name: 'AKS safeguard: no host namespaces',
+    description: 'hostNetwork, hostPID, and hostIPC are disallowed under the baseline PSS',
+    check: (manifest: KubernetesManifest) => {
+      if (!isWorkload(manifest)) return true;
+
+      const podSpec = getPodSpec(manifest);
+      return !podSpec?.hostNetwork && !podSpec?.hostPID && !podSpec?.hostIPC;
+    },
+    message: 'Do not set hostNetwork, hostPID, or hostIPC to true (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Remove hostNetwork/hostPID/hostIPC or set them to false',
+    category: ValidationCategory.COMPLIANCE,
+  },
+
+  {
+    // Upstream: k8sazurev1enforcecsidriver
+    id: 'aks-safeguard-csi-storageclass',
+    name: 'AKS safeguard: CSI driver StorageClass',
+    description: 'StorageClasses must use a CSI provisioner, not an in-tree Azure provisioner',
+    check: (manifest: KubernetesManifest) => {
+      if (manifest.kind !== 'StorageClass') return true;
+
+      const provisioner = (manifest as { provisioner?: string }).provisioner;
+      const inTree = ['kubernetes.io/azure-disk', 'kubernetes.io/azure-file'];
+      return !provisioner || !inTree.includes(provisioner);
+    },
+    message:
+      'Use a CSI StorageClass provisioner (disk.csi.azure.com or file.csi.azure.com), not an in-tree provisioner (AKS Deployment Safeguards)',
+    severity: ValidationSeverity.ERROR,
+    fix: 'Set provisioner to disk.csi.azure.com or file.csi.azure.com',
+    category: ValidationCategory.COMPLIANCE,
+  },
 ];
 
 /**
@@ -403,12 +599,73 @@ const createReport = (results: ValidationResult[]): ValidationReport => {
 };
 
 /**
+ * Cross-document AKS safeguard: unique Service selectors.
+ * Mirrors k8sazurev1uniqueserviceselector — flags Services in the same
+ * namespace that share an identical selector.
+ */
+const checkUniqueServiceSelectors = (documents: KubernetesManifest[]): ValidationResult[] => {
+  const results: ValidationResult[] = [];
+  const services = documents.filter(
+    (doc) => doc.kind === 'Service' && doc.spec?.selector && typeof doc.spec.selector === 'object',
+  );
+
+  const flatten = (selector: Record<string, unknown>): string =>
+    Object.keys(selector)
+      .sort()
+      .map((key) => `${key}:${String(selector[key])}`)
+      .join(',');
+
+  for (const service of services) {
+    const namespace = service.metadata?.namespace || 'default';
+    const name = service.metadata?.name || 'Service';
+    const selector = flatten(service.spec?.selector as Record<string, unknown>);
+
+    const collision = services.find(
+      (other) =>
+        other !== service &&
+        (other.metadata?.namespace || 'default') === namespace &&
+        flatten(other.spec?.selector as Record<string, unknown>) === selector,
+    );
+
+    const passed = !collision;
+    results.push({
+      ruleId: `${name}-aks-safeguard-unique-service-selector`,
+      isValid: passed,
+      passed,
+      errors: passed
+        ? []
+        : [
+            `[${name}] AKS safeguard: unique Service selector: shares selector with Service ${collision?.metadata?.name} in namespace ${namespace}`,
+          ],
+      warnings: [],
+      message: passed
+        ? `✓ [${name}] AKS safeguard: unique Service selector`
+        : `✗ [${name}] AKS safeguard: unique Service selector: collides with ${collision?.metadata?.name}`,
+      suggestions: passed ? [] : ['Give each Service a unique spec.selector within its namespace'],
+      metadata: {
+        severity: ValidationSeverity.ERROR,
+        location: `Service/${name}`,
+      },
+    });
+  }
+
+  return results;
+};
+
+/**
  * Validate Kubernetes YAML content
  */
 const validateKubernetesContent = (yamlContent: string): ValidationReport => {
   try {
     try {
-      parseYaml(yamlContent);
+      // Use parseAllDocuments so multi-document manifests (resources separated
+      // by `---`) are treated as valid syntax rather than throwing. parse()
+      // rejects multi-document input, which real K8s manifest sets routinely use.
+      const parsedDocs = parseAllDocuments(yamlContent);
+      const fatal = parsedDocs.flatMap((doc) => doc.errors);
+      if (fatal.length > 0 && fatal[0]) {
+        throw fatal[0];
+      }
     } catch (parseError) {
       return {
         results: [
@@ -492,6 +749,13 @@ const validateKubernetesContent = (yamlContent: string): ValidationReport => {
           },
         });
       }
+    }
+
+    // Cross-document AKS safeguard: unique Service selectors
+    // (k8sazurev1uniqueserviceselector). Two Services in the same namespace
+    // with identical selectors collide at admission time.
+    for (const result of checkUniqueServiceSelectors(documents)) {
+      allResults.push(result);
     }
 
     // Fail-fast if content parses as YAML but contains no K8s resources

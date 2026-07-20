@@ -1,0 +1,7 @@
+# Non-compliant: in-tree StorageClass provisioner (K8sAzureV1EnforceCSIDriver).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: legacy-managed
+provisioner: kubernetes.io/azure-disk
+reclaimPolicy: Delete

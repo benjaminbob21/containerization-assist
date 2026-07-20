@@ -403,5 +403,341 @@ spec:
 
       expect(report.results[0].ruleId).toBe('no-documents');
     });
+
+    test('should validate multi-document manifests (--- separated)', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multi
+  labels:
+    app: multi
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: multi
+    spec:
+      containers:
+      - name: app
+        image: myapp:1.0.0
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multi
+spec:
+  selector:
+    app: multi
+  ports:
+  - port: 80
+    targetPort: 8080
+      `.trim();
+
+      const report = validator.validate(manifest);
+
+      // Should NOT fall through to the parse-error / no-documents path.
+      expect(report.results.some((r) => r.ruleId === 'parse-error')).toBe(false);
+      expect(report.results.some((r) => r.ruleId === 'no-documents')).toBe(false);
+      // Rules from both the Deployment and the Service should be present.
+      expect(report.results.some((r) => r.ruleId?.startsWith('multi-'))).toBe(true);
+    });
+  });
+
+  describe('AKS Deployment Safeguards', () => {
+    const findRule = (report: ReturnType<KubernetesValidatorInstance['validate']>, id: string) =>
+      report.results.find((r) => r.ruleId?.endsWith(id));
+
+    test('flags missing container resource requests', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:1.0.0
+      `.trim();
+
+      const rule = findRule(validator.validate(manifest), 'aks-safeguard-resource-requests');
+      expect(rule?.passed).toBe(false);
+      expect(rule?.metadata?.severity).toBe(ValidationSeverity.ERROR);
+    });
+
+    test('flags :latest image tag', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-no-latest-image')?.passed).toBe(
+        false,
+      );
+    });
+
+    test('flags untagged image as latest', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myregistry.azurecr.io/app
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-no-latest-image')?.passed).toBe(
+        false,
+      );
+    });
+
+    test('accepts a digest-pinned image', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myregistry.azurecr.io/app@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-no-latest-image')?.passed).toBe(
+        true,
+      );
+    });
+
+    test('flags multi-replica workload without anti-affinity', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:1.0.0
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-anti-affinity')?.passed).toBe(
+        false,
+      );
+    });
+
+    test('accepts anti-affinity via topologySpreadConstraints', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 3
+  template:
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+      containers:
+      - name: app
+        image: myapp:1.0.0
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-anti-affinity')?.passed).toBe(
+        true,
+      );
+    });
+
+    test('flags AKS-reserved labels', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    kubernetes.azure.com/mode: user
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:1.0.0
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      const rule = findRule(validator.validate(manifest), 'aks-safeguard-restricted-labels');
+      expect(rule?.passed).toBe(false);
+      expect(rule?.metadata?.severity).toBe(ValidationSeverity.ERROR);
+    });
+
+    test('flags host namespaces', () => {
+      const manifest = `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app
+spec:
+  hostPID: true
+  containers:
+  - name: app
+    image: myapp:1.0.0
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-host-namespaces')?.passed).toBe(
+        false,
+      );
+    });
+
+    test('flags in-tree StorageClass provisioner', () => {
+      const manifest = `
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: managed
+provisioner: kubernetes.io/azure-disk
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-csi-storageclass')?.passed).toBe(
+        false,
+      );
+    });
+
+    test('accepts a CSI StorageClass provisioner', () => {
+      const manifest = `
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: managed-csi
+provisioner: disk.csi.azure.com
+      `.trim();
+
+      expect(findRule(validator.validate(manifest), 'aks-safeguard-csi-storageclass')?.passed).toBe(
+        true,
+      );
+    });
+
+    test('flags duplicate Service selectors in the same namespace', () => {
+      const manifest = `
+apiVersion: v1
+kind: Service
+metadata:
+  name: a
+  namespace: default
+spec:
+  selector:
+    app: shared
+  ports:
+  - port: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: b
+  namespace: default
+spec:
+  selector:
+    app: shared
+  ports:
+  - port: 80
+      `.trim();
+
+      const results = validator
+        .validate(manifest)
+        .results.filter((r) => r.ruleId?.endsWith('aks-safeguard-unique-service-selector'));
+      expect(results.length).toBe(2);
+      expect(results.every((r) => r.passed === false)).toBe(true);
+    });
+
+    test('accepts a fully compliant production Deployment', () => {
+      const manifest = `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: web
+        image: mcr.microsoft.com/openjdk/jdk:21-azurelinux
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits: { cpu: 500m, memory: 512Mi }
+        readinessProbe:
+          httpGet: { path: /health, port: 8080 }
+        livenessProbe:
+          httpGet: { path: /health, port: 8080 }
+      `.trim();
+
+      const report = validator.validate(manifest);
+      const safeguardFailures = report.results.filter(
+        (r) => r.ruleId?.includes('aks-safeguard-') && r.passed === false,
+      );
+      expect(safeguardFailures).toHaveLength(0);
+    });
   });
 });

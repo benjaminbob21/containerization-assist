@@ -42,6 +42,7 @@ const BUILT_IN_POLICY_MODULES: Record<string, string> = {
   'security-baseline.rego': `${POLICY_NAMESPACE}/security/result`,
   'base-images.rego': `${POLICY_NAMESPACE}/base_images/result`,
   'container-best-practices.rego': `${POLICY_NAMESPACE}/best_practices/result`,
+  'aks-deployment-safeguards.rego': `${POLICY_NAMESPACE}/aks_safeguards/result`,
 };
 
 /**

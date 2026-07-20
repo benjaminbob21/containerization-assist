@@ -1,0 +1,33 @@
+# Non-compliant: violates several AKS Deployment Safeguards.
+#   - no resource requests            (K8sAzureV1ContainerRequests)
+#   - :latest image tag               (K8sAzureV2ContainerNoLatestImage)
+#   - replicas > 1, no anti-affinity  (K8sAzureV1AntiAffinityRules)
+#   - no readiness/liveness probes    (K8sAzureV2ContainerEnforceProbes)
+#   - AKS-reserved label              (K8sAzureV1RestrictedLabels)
+#   - privileged container            (K8sAzureV2NoPrivilege)
+#   - hostNetwork / hostPID           (K8sAzureV3BlockHostNamespace)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-app
+  namespace: default
+  labels:
+    app: bad-app
+    kubernetes.azure.com/mode: user
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bad-app
+  template:
+    metadata:
+      labels:
+        app: bad-app
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: bad-app
+          image: nginx:latest
+          securityContext:
+            privileged: true

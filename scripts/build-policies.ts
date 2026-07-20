@@ -24,6 +24,7 @@ const ENTRYPOINTS = [
   'containerization/security/result',
   'containerization/base_images/result',
   'containerization/best_practices/result',
+  'containerization/aks_safeguards/result',
 ];
 
 interface BuildResult {
@@ -72,13 +73,15 @@ async function compilePoliciesToWasm(regoPaths: string[]): Promise<BuildResult> 
 
     // Compile all policies to a single WASM bundle
     // Use multiple entrypoints for each policy module's result
-    const entrypointArgs = ENTRYPOINTS.flatMap(e => ['-e', e]);
+    const entrypointArgs = ENTRYPOINTS.flatMap((e) => ['-e', e]);
     await execFileAsync(opaBinary, [
       'build',
-      '-t', 'wasm',
+      '-t',
+      'wasm',
       ...entrypointArgs,
       ...regoPaths,
-      '-o', bundlePath,
+      '-o',
+      bundlePath,
     ]);
 
     // Extract policy.wasm from the bundle
@@ -132,8 +135,8 @@ async function extractWasmFromBundle(bundlePath: string, outputPath: string): Pr
     await rm(tempDir, { recursive: true, force: true });
   } catch (error) {
     // Clean up on error
-    await rm(tempDir, { recursive: true, force: true }).catch(err =>
-      console.debug('Temp cleanup failed:', err)
+    await rm(tempDir, { recursive: true, force: true }).catch((err) =>
+      console.debug('Temp cleanup failed:', err),
     );
     throw error;
   }
@@ -158,8 +161,11 @@ async function getFileSize(path: string): Promise<string> {
 async function findPolicyFiles(): Promise<string[]> {
   const entries = await readdir(POLICIES_DIR, { withFileTypes: true });
   return entries
-    .filter(entry => entry.isFile() && entry.name.endsWith('.rego') && !entry.name.endsWith('_test.rego'))
-    .map(entry => join(POLICIES_DIR, entry.name));
+    .filter(
+      (entry) =>
+        entry.isFile() && entry.name.endsWith('.rego') && !entry.name.endsWith('_test.rego'),
+    )
+    .map((entry) => join(POLICIES_DIR, entry.name));
 }
 
 /**
@@ -183,7 +189,9 @@ async function main() {
     console.error('❌ OPA binary not found');
     console.error('   Install OPA: https://www.openpolicyagent.org/docs/latest/#running-opa');
     console.error('   Or use pre-built WASM from git (committed for CI/production)');
-    console.error('\n💡 If you are in CI and seeing this, ensure policies/compiled/*.wasm is committed to git');
+    console.error(
+      '\n💡 If you are in CI and seeing this, ensure policies/compiled/*.wasm is committed to git',
+    );
     process.exit(1);
   }
 
@@ -216,7 +224,7 @@ async function main() {
   console.log(`   Output: ${OUTPUT_DIR}/`);
 }
 
-main().catch(error => {
+main().catch((error) => {
   console.error('Build failed:', error);
   process.exit(1);
 });
